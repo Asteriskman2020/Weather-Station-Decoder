@@ -2,7 +2,7 @@
  * WH65 Weather Station Receiver V1
  * ESP32-C3 Super-mini + CC1101 + PMS7003
  *
- * CC1101 Pins: MISO=GPIO0, MOSI=GPIO1, CLK=GPIO2, CSN=GPIO3
+ * CC1101 Pins: MISO=GPIO21, MOSI=GPIO20, CLK=GPIO2, CSN=GPIO3
  * PMS7003:     UART RX=GPIO4
  * RGB LED:     GPIO8 (built-in WS2812)
  * Board:       esp32:esp32:esp32c3
@@ -15,11 +15,11 @@
 #include <PubSubClient.h>
 #include <ArduinoOTA.h>
 #include <Preferences.h>
-#include <driver/rmt.h>
+// neopixelWrite() is built into ESP32 Arduino core
 
 // ─── Pin Definitions ────────────────────────────────────────────────
-#define CC1101_MISO   0
-#define CC1101_MOSI   1
+#define CC1101_MISO   21
+#define CC1101_MOSI   20
 #define CC1101_CLK    2
 #define CC1101_CSN    3
 #define PMS_RX_PIN    4
@@ -134,33 +134,9 @@ static bool apMode = false;
 static uint8_t ledColorIdx = 0;
 static uint32_t lastMqttReconnect = 0;
 
-// ─── RGB LED (WS2812 via RMT) ──────────────────────────────────────
-static rmt_item32_t ledBuf[24];
-
-static void rmtInit() {
-  rmt_config_t c = RMT_DEFAULT_CONFIG_TX((gpio_num_t)RGB_LED_PIN, RMT_CHANNEL_0);
-  c.clk_div = 2;  // 40MHz tick → 25ns
-  rmt_config(&c);
-  rmt_driver_install(RMT_CHANNEL_0, 0, 0);
-}
-
+// ─── RGB LED (WS2812 via built-in neopixelWrite) ────────────────────
 static void setLED(uint8_t r, uint8_t g, uint8_t b) {
-  // WS2812 GRB order
-  uint32_t grb = ((uint32_t)g << 16) | ((uint32_t)r << 8) | b;
-  for (int i = 23; i >= 0; i--) {
-    if (grb & (1 << i)) {
-      ledBuf[23 - i].duration0 = 32;  // ~800ns high
-      ledBuf[23 - i].level0 = 1;
-      ledBuf[23 - i].duration1 = 18;  // ~450ns low
-      ledBuf[23 - i].level1 = 0;
-    } else {
-      ledBuf[23 - i].duration0 = 14;  // ~350ns high
-      ledBuf[23 - i].level0 = 1;
-      ledBuf[23 - i].duration1 = 32;  // ~800ns low
-      ledBuf[23 - i].level1 = 0;
-    }
-  }
-  rmt_write_items(RMT_CHANNEL_0, ledBuf, 24, true);
+  neopixelWrite(RGB_LED_PIN, r, g, b);
 }
 
 static void ledOff() { setLED(0, 0, 0); }
@@ -874,11 +850,10 @@ static void startSTA() {
 // ─── Setup ──────────────────────────────────────────────────────────
 void setup() {
   Serial.begin(115200);
-  delay(500);
+  delay(2000);  // Wait for USB CDC serial
   Serial.println("\n=== WH65 Weather Station RX V1 ===");
 
   // LED init
-  rmtInit();
   setLED(0, 0, 30);  // Blue on boot
 
   // Load config from NVS
